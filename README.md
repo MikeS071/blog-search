@@ -31,6 +31,18 @@ AI Engram gives your AI assistant long-term memory and deep search over your mar
 | `memory_stats` | Memory counts by category and storage size |
 | `get_system_prompt` | Load the memory protocol instructions |
 
+## Repository Structure
+
+This repo contains only the AI Engram source code and configuration. Blog content (posts, outlines, prompts, knowledge base) is excluded via `.gitignore` and lives locally in the workspace.
+
+```
+aiengram_mcp.py          # MCP server — all tools, search engines, memory store
+aiengram.py              # Standalone search module
+pyproject.toml           # Project metadata and dependencies
+.github/                 # GitHub config (Copilot instructions)
+README.md                # This file
+```
+
 ## Requirements
 
 - Python >= 3.10
@@ -59,12 +71,14 @@ Or add to your MCP client configuration (e.g. VS Code `settings.json`):
       "aiengram": {
         "command": "uv",
         "args": ["run", "aiengram_mcp.py"],
-        "cwd": "/path/to/your/workspace"
+        "cwd": "/path/to/your/markdown/workspace"
       }
     }
   }
 }
 ```
+
+Point `cwd` at any directory containing markdown files. AI Engram auto-discovers content in `Blog Posts/`, `Post Outlines/`, `Prompts/`, and knowledge base files.
 
 ## Roadmap
 

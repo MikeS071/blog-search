@@ -14,3 +14,17 @@ __pycache__/
 
 # Editor
 .vscode/
+
+# Blog content (tracked separately from code)
+Blog Posts/
+Post Outlines/
+Prompt - *.md
+Brand Voice Profile.md
+Content Calendar - *.md
+KB - *.md
+Post Outline - *.md
+AI and the Value of Expertise.md
+
+# Memory (persistent across conversations)
+.aiengram_memory.jsonl
+
