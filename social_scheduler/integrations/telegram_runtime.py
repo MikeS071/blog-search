@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -36,6 +37,13 @@ class TelegramRuntime:
             return
         text = (update.message.text or "").strip()
         result = self.control.handle_command(str(update.effective_user.id), text)
+        token_id = self._confirm_token_from_message(result.message)
+        if result.ok and token_id:
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Confirm", callback_data=f"confirm:{token_id}")]]
+            )
+            await update.message.reply_text(result.message, reply_markup=keyboard)
+            return
         await update.message.reply_text(result.message)
 
     async def on_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -132,3 +140,8 @@ class TelegramRuntime:
             return True
         uid = str(update.effective_user.id) if update.effective_user else ""
         return uid == self.allowed_user_id
+
+    @staticmethod
+    def _confirm_token_from_message(message: str) -> str | None:
+        match = re.search(r"/confirm\s+([^\s]+)", message)
+        return match.group(1) if match else None
