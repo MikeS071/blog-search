@@ -108,6 +108,15 @@ class TelegramControl:
             self._audit(user_id, f"kill_switch_request_{desired}", token.id)
             return TelegramResult(True, f"Confirm with /confirm {token.id}")
 
+        if cmd == "/override" and len(parts) >= 2:
+            post_id = parts[1]
+            token = self.create_confirmation_token(
+                action="manual_override_publish",
+                target_id=post_id,
+            )
+            self._audit(user_id, "manual_override_request", token.id)
+            return TelegramResult(True, f"Confirm override with /confirm {token.id}")
+
         return TelegramResult(False, "Unknown command")
 
     def expire_decision_requests(self) -> int:
@@ -188,6 +197,15 @@ class TelegramControl:
             self.service.set_kill_switch(False)
             self._audit(user_id, "kill_switch_off", token.id)
             return TelegramResult(True, "Kill switch disabled")
+        if token.action == "manual_override_publish":
+            post = self.service.manual_override_publish(
+                post_id=token.target_id,
+                reason="telegram_manual_override",
+                telegram_user_id=user_id,
+                confirmation_token_id=token.id,
+            )
+            self._audit(user_id, "manual_override_confirmed", token.id)
+            return TelegramResult(True, f"Manual override queued for post {post.id}")
 
         self._audit(user_id, f"token_consumed_{token.action}", token.id)
         return TelegramResult(True, f"Token consumed for action {token.action}")

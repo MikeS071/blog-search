@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from social_scheduler.core.models import PostState, SocialPost, utc_now_iso
 from social_scheduler.core.paths import ensure_directories
 from social_scheduler.core.service import SocialSchedulerService
+from social_scheduler.worker.health_gate import can_publish_now
 from social_scheduler.worker.runner import WorkerRunner
 
 
@@ -75,3 +76,34 @@ def test_worker_blocks_live_publish_when_health_fails():
     row = service.posts.find_one("id", "p_live")
     assert row is not None
     assert row["state"] == PostState.SCHEDULED.value
+
+
+def test_live_publish_requires_daily_health_gate_pass():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    _seed_scheduled_post(service, "p_gate")
+
+    # Without a current-day health pass, live publish must be blocked.
+    ok, reason = can_publish_now(service)
+    assert not ok
+    assert "Daily health gate not passed" in reason
+
+
+def test_health_check_sets_gate_pass_for_today():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+
+    # Seed token file so health can pass.
+    from pathlib import Path
+
+    token_file = Path(".social_scheduler/secrets/tokens.enc")
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.write_text("encrypted-placeholder", encoding="utf-8")
+    try:
+        status = service.health_check()
+        assert status.overall_status == "pass"
+        assert service.has_passed_health_gate_today()
+    finally:
+        token_file.unlink(missing_ok=True)

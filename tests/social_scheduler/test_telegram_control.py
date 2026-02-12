@@ -30,6 +30,7 @@ def _reset(service: SocialSchedulerService) -> None:
     service.telegram_decisions.delete_where(lambda _: True)
     service.confirm_tokens.delete_where(lambda _: True)
     service.controls.delete_where(lambda _: True)
+    service.manual_overrides.delete_where(lambda _: True)
 
 
 def test_unauthorized_user_rejected():
@@ -97,3 +98,31 @@ def test_expired_decision_moves_post_to_pending_manual():
     post_row = service.posts.find_one("id", "p1")
     assert post_row is not None
     assert post_row["state"] == PostState.PENDING_MANUAL.value
+
+
+def test_manual_override_confirm_schedules_post_now():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    _seed_post(service, post_id="p_override")
+
+    # Move to pending_manual so override is relevant.
+    row = service.posts.find_one("id", "p_override")
+    assert row is not None
+    row["state"] = PostState.PENDING_MANUAL.value
+    service.posts.upsert("id", "p_override", row)
+
+    control = TelegramControl(service, allowed_user_id="123")
+    request = control.handle_command("123", "/override p_override")
+    assert request.ok
+    token = request.message.split()[-1]
+
+    confirmed = control.handle_command("123", f"/confirm {token}")
+    assert confirmed.ok
+
+    post_row = service.posts.find_one("id", "p_override")
+    assert post_row is not None
+    assert post_row["state"] == PostState.SCHEDULED.value
+
+    audits = service.manual_overrides.read_all()
+    assert len(audits) == 1

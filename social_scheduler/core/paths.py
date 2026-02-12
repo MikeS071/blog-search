@@ -7,6 +7,7 @@ DATA_ROOT = Path(os.environ.get("SOCIAL_SCHEDULER_ROOT", Path.cwd() / ".social_s
 DATA_DIR = DATA_ROOT / "data"
 LOG_DIR = DATA_ROOT / "logs"
 SECRETS_DIR = DATA_ROOT / "secrets"
+TOKENS_FILE = SECRETS_DIR / "tokens.enc"
 
 CAMPAIGNS_FILE = DATA_DIR / "campaigns.jsonl"
 POSTS_FILE = DATA_DIR / "posts.jsonl"

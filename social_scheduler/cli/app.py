@@ -8,6 +8,8 @@ import typer
 from social_scheduler.core.models import SocialPost
 from social_scheduler.core.paths import ensure_directories
 from social_scheduler.core.service import SocialSchedulerService
+from social_scheduler.core.token_vault import TokenVault
+from social_scheduler.integrations.telegram_runtime import TelegramRuntime
 from social_scheduler.core.telegram_control import TelegramControl
 from social_scheduler.reports.digest import daily_digest, weekly_summary
 from social_scheduler.worker.runner import WorkerRunner
@@ -114,10 +116,12 @@ def worker_run(
 def health() -> None:
     service = _service()
     status = service.health_check()
+    gate_today = "yes" if service.has_passed_health_gate_today() else "no"
     typer.echo(
         f"Health: {status.overall_status} token={status.token_status} "
         f"worker={status.worker_status} kill_switch={status.kill_switch_status} "
-        f"critical_failures={status.critical_failure_status}"
+        f"critical_failures={status.critical_failure_status} "
+        f"gate_passed_today={gate_today}"
     )
 
 
@@ -163,6 +167,57 @@ def digest(kind: str = typer.Argument("daily", help="daily|weekly")) -> None:
         typer.echo(weekly_summary(service))
         return
     raise typer.BadParameter("kind must be daily or weekly")
+
+
+@app.command("token-set")
+def token_set(
+    name: str = typer.Argument(..., help="Token name, e.g. linkedin_access_token"),
+    value: str = typer.Option(..., prompt=True, hide_input=True),
+) -> None:
+    _service()
+    vault = TokenVault()
+    vault.set_token(name, value)
+    typer.echo(f"Stored token: {name}")
+
+
+@app.command("token-get")
+def token_get(name: str) -> None:
+    _service()
+    vault = TokenVault()
+    value = vault.get_token(name)
+    if value is None:
+        typer.echo("Token not found.")
+        raise typer.Exit(code=1)
+    typer.echo(f"{name}: present ({len(value)} chars)")
+
+
+@app.command("token-list")
+def token_list() -> None:
+    _service()
+    vault = TokenVault()
+    names = vault.list_tokens()
+    if not names:
+        typer.echo("No tokens stored.")
+        return
+    for name in names:
+        typer.echo(name)
+
+
+@app.command("token-delete")
+def token_delete(name: str) -> None:
+    _service()
+    vault = TokenVault()
+    deleted = vault.delete_token(name)
+    if not deleted:
+        typer.echo("Token not found.")
+        raise typer.Exit(code=1)
+    typer.echo(f"Deleted token: {name}")
+
+
+@app.command("telegram-run")
+def telegram_run() -> None:
+    runtime = TelegramRuntime()
+    runtime.run_polling()
 
 
 @app.command("telegram-cmd")

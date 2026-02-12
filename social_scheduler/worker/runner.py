@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from social_scheduler.core.models import PostState
 from social_scheduler.core.service import SocialSchedulerService
 from social_scheduler.core.telegram_control import TelegramControl
+from social_scheduler.core.token_vault import TokenVault
 from social_scheduler.integrations.linkedin_client import LinkedInClient
 from social_scheduler.integrations.telegram_bot import TelegramNotifier
 from social_scheduler.integrations.x_client import XClient
@@ -19,8 +20,9 @@ from social_scheduler.worker.kill_switch import is_publish_paused
 class WorkerRunner:
     def __init__(self, service: SocialSchedulerService) -> None:
         self.service = service
-        self.linkedin = LinkedInClient()
-        self.x = XClient()
+        self.vault = TokenVault() if os.getenv("SOCIAL_ENCRYPTION_KEY") else None
+        self.linkedin = LinkedInClient(vault=self.vault)
+        self.x = XClient(vault=self.vault)
         self.telegram = TelegramNotifier()
         self.telegram_control = TelegramControl(
             service,
@@ -41,7 +43,11 @@ class WorkerRunner:
         if not dry_run:
             ok, reason = can_publish_now(self.service)
             if not ok:
-                self.telegram.send_message(f"Publish worker blocked by health gate: {reason}", critical=True)
+                if self._should_send_health_alert():
+                    self.telegram.send_message(
+                        f"Publish worker blocked by health gate: {reason}",
+                        critical=True,
+                    )
                 return 0
 
         due = self.service.due_posts(datetime.now(tz=ZoneInfo("UTC")))
@@ -110,3 +116,17 @@ class WorkerRunner:
             if self.service.get_control(control_key) != "1":
                 self.telegram.send_message(weekly_summary(self.service), critical=False)
                 self.service.set_control(control_key, "1")
+
+    def _should_send_health_alert(self) -> bool:
+        key = "health_gate_last_alert_utc"
+        now = datetime.now(tz=ZoneInfo("UTC"))
+        last = self.service.get_control(key)
+        if last:
+            try:
+                dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                if now - dt < timedelta(minutes=30):
+                    return False
+            except ValueError:
+                pass
+        self.service.set_control(key, now.isoformat())
+        return True

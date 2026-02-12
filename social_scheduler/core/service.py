@@ -13,6 +13,7 @@ from social_scheduler.core.models import (
     AttemptResult,
     Campaign,
     HealthCheckStatus,
+    ManualOverrideAudit,
     PostState,
     SocialPost,
     SocialPostAttempt,
@@ -26,12 +27,14 @@ from social_scheduler.core.paths import (
     CAMPAIGNS_FILE,
     CONFIRM_TOKENS_FILE,
     HEALTH_FILE,
+    MANUAL_OVERRIDE_FILE,
     POSTS_FILE,
     RULES_FILE,
     SYSTEM_CONTROLS_FILE,
     TELEGRAM_AUDIT_FILE,
     TELEGRAM_DECISIONS_FILE,
     TELEGRAM_RATE_LIMIT_FILE,
+    TOKENS_FILE,
 )
 from social_scheduler.core.state_machine import ensure_transition
 from social_scheduler.core.storage_jsonl import JsonlStore
@@ -49,6 +52,7 @@ class SocialSchedulerService:
         self.telegram_rate = JsonlStore(TELEGRAM_RATE_LIMIT_FILE)
         self.confirm_tokens = JsonlStore(CONFIRM_TOKENS_FILE)
         self.health = JsonlStore(HEALTH_FILE)
+        self.manual_overrides = JsonlStore(MANUAL_OVERRIDE_FILE)
         self.controls = JsonlStore(SYSTEM_CONTROLS_FILE)
 
     def _new_id(self, prefix: str) -> str:
@@ -256,7 +260,7 @@ class SocialSchedulerService:
         return control
 
     def health_check(self) -> HealthCheckStatus:
-        token_ok = bool(Path(".social_scheduler/secrets/tokens.enc").exists())
+        token_ok = bool(TOKENS_FILE.exists() and TOKENS_FILE.stat().st_size > 0)
         worker_ok = True
         kill = self.is_kill_switch_on()
         critical_failures = bool(self.posts.filter(lambda r: r.get("state") == PostState.FAILED.value))
@@ -273,7 +277,16 @@ class SocialSchedulerService:
             critical_failure_status="present" if critical_failures else "none",
         )
         self.health.append(status.model_dump())
+        if status.overall_status == "pass":
+            self.set_control("health_gate_last_pass_date", self._local_date())
         return status
+
+    def _local_date(self) -> str:
+        return datetime.now().astimezone().date().isoformat()
+
+    def has_passed_health_gate_today(self) -> bool:
+        value = self.get_control("health_gate_last_pass_date")
+        return value == self._local_date()
 
     def due_posts(self, now_utc: datetime | None = None) -> list[SocialPost]:
         if now_utc is None:
@@ -345,6 +358,38 @@ class SocialSchedulerService:
         post.state = PostState.CANCELED
         post.updated_at = utc_now_iso()
         self.posts.upsert("id", post.id, post.model_dump())
+        return post
+
+    def manual_override_publish(
+        self,
+        post_id: str,
+        reason: str,
+        telegram_user_id: str,
+        confirmation_token_id: str,
+    ) -> SocialPost:
+        row = self.posts.find_one("id", post_id)
+        if not row:
+            raise ValueError(f"Post not found: {post_id}")
+        post = SocialPost.model_validate(row)
+        if post.state in {PostState.POSTED, PostState.CANCELED}:
+            raise ValueError(f"Cannot override post in state {post.state.value}")
+        if post.state != PostState.SCHEDULED:
+            ensure_transition(post.state, PostState.SCHEDULED)
+            post.state = PostState.SCHEDULED
+        post.scheduled_for_utc = datetime.now(tz=ZoneInfo("UTC")).isoformat()
+        post.updated_at = utc_now_iso()
+        self.posts.upsert("id", post.id, post.model_dump())
+
+        audit = ManualOverrideAudit(
+            id=self._new_id("ovr"),
+            campaign_id=post.campaign_id,
+            social_post_id=post.id,
+            telegram_user_id=telegram_user_id,
+            reason=reason,
+            confirmation_token_id=confirmation_token_id,
+            created_at=utc_now_iso(),
+        )
+        self.manual_overrides.append(audit.model_dump())
         return post
 
     def _mark_overdue_for_reconfirmation(self) -> None:
