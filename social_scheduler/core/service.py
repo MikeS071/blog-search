@@ -418,6 +418,48 @@ class SocialSchedulerService:
         )
         return [SocialPost.model_validate(r) for r in rows]
 
+    def should_publish_missed_schedule(self, post: SocialPost, now_utc: datetime | None = None) -> bool:
+        if now_utc is None:
+            now_utc = datetime.now(tz=ZoneInfo("UTC"))
+        if not post.scheduled_for_utc:
+            return True
+        scheduled_dt = datetime.fromisoformat(post.scheduled_for_utc.replace("Z", "+00:00"))
+        lag = now_utc - scheduled_dt
+        if lag <= timedelta(hours=2):
+            return True
+
+        ensure_transition(post.state, PostState.PENDING_MANUAL)
+        post.state = PostState.PENDING_MANUAL
+        post.updated_at = utc_now_iso()
+        self.posts.upsert("id", post.id, post.model_dump())
+        self._log_event(
+            "post_reconfirmation_required",
+            campaign_id=post.campaign_id,
+            post_id=post.id,
+            details={"lag_minutes": int(lag.total_seconds() // 60)},
+        )
+
+        existing_open = self.telegram_decisions.filter(
+            lambda r: r.get("social_post_id") == post.id
+            and r.get("status") == "open"
+            and r.get("request_type") == "confirmation"
+        )
+        if not existing_open:
+            req = TelegramDecisionRequest(
+                id=self._new_id("tgr"),
+                campaign_id=post.campaign_id,
+                social_post_id=post.id,
+                request_type="confirmation",
+                message=(
+                    f"Post {post.id} missed schedule by more than 2 hours. "
+                    "Reconfirm schedule before publish."
+                ),
+                created_at=utc_now_iso(),
+                expires_at=(now_utc + timedelta(minutes=30)).isoformat(),
+            )
+            self.telegram_decisions.append(req.model_dump())
+        return False
+
     def mark_post_result(
         self,
         post: SocialPost,

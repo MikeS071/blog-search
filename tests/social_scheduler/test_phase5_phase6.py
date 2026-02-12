@@ -317,3 +317,38 @@ def test_worker_passes_deterministic_idempotency_key_to_publish_client():
 
     expected = idempotency_key(post.campaign_id, post.platform, post.approved_content_hash or "")
     assert captured.get("key") == expected
+
+
+def test_worker_missed_schedule_over_2h_requires_reconfirmation():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    post = _seed_scheduled_post(service, "p_missed_over2h", offset_minutes=-121)
+
+    runner = WorkerRunner(service)
+    count = runner.run_once(dry_run=True)
+    assert count == 0
+
+    row = service.posts.find_one("id", post.id)
+    assert row is not None
+    assert row["state"] == PostState.PENDING_MANUAL.value
+
+    reqs = service.telegram_decisions.filter(
+        lambda r: r.get("social_post_id") == post.id and r.get("status") == "open"
+    )
+    assert len(reqs) == 1
+
+
+def test_worker_missed_schedule_within_2h_publishes_immediately():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    post = _seed_scheduled_post(service, "p_missed_under2h", offset_minutes=-30)
+
+    runner = WorkerRunner(service)
+    count = runner.run_once(dry_run=True)
+    assert count == 1
+
+    row = service.posts.find_one("id", post.id)
+    assert row is not None
+    assert row["state"] == PostState.POSTED.value

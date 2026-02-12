@@ -62,6 +62,12 @@ class WorkerRunner:
             try:
                 if post.state != PostState.SCHEDULED:
                     continue
+                if not self.service.should_publish_missed_schedule(post):
+                    self._safe_notify(
+                        f"Post {post.id} requires reconfirmation (>2h overdue).",
+                        critical=True,
+                    )
+                    continue
                 if not dry_run:
                     preflight = validate_post(post, stage="pre_publish")
                     if not preflight.ok:
