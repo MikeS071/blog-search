@@ -453,6 +453,9 @@ def test_worker_rollout_stage_linkedin_live_skips_x_live():
     service = SocialSchedulerService()
     _reset(service)
     _seed_scheduled_post(service, "p_rollout_x")
+    service.set_release_gate("release_gate_unit_tests", True)
+    service.set_release_gate("release_gate_integration_tests", True)
+    service.set_release_gate("release_gate_dry_run_replay", True)
     service.set_rollout_stage("linkedin_live")
 
     from pathlib import Path
@@ -471,3 +474,20 @@ def test_worker_rollout_stage_linkedin_live_skips_x_live():
         assert row["state"] == PostState.SCHEDULED.value
     finally:
         token_file.unlink(missing_ok=True)
+
+
+def test_set_rollout_stage_requires_release_gates():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    try:
+        service.set_rollout_stage("linkedin_live")
+        assert False, "Expected gate failure"
+    except ValueError as exc:
+        assert "release gates not passed" in str(exc)
+
+    service.set_release_gate("release_gate_unit_tests", True)
+    service.set_release_gate("release_gate_integration_tests", True)
+    service.set_release_gate("release_gate_dry_run_replay", True)
+    control = service.set_rollout_stage("linkedin_live")
+    assert control.value == "linkedin_live"

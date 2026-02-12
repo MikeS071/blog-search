@@ -77,6 +77,8 @@ scripts/social-scheduler/run-telegram-webhook.sh 127.0.0.1 8080 /telegram https:
 ./.venv/bin/python -m social_scheduler.main health
 ./.venv/bin/python -m social_scheduler.main kill-switch status
 ./.venv/bin/python -m social_scheduler.main rollout-stage status
+./.venv/bin/python -m social_scheduler.main release-gate status
+./.venv/bin/python -m social_scheduler.main release-gate set release_gate_unit_tests pass
 ./.venv/bin/python -m social_scheduler.main rollout-stage set linkedin_live
 
 # View lifecycle timeline events

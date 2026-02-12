@@ -188,6 +188,29 @@ def rollout_stage(action: str = typer.Argument("status"), stage: str = typer.Arg
     typer.echo(f"rollout_stage={control.value}")
 
 
+@app.command("release-gate")
+def release_gate(
+    action: str = typer.Argument("status"),
+    gate: str = typer.Argument("release_gate_unit_tests"),
+    value: str = typer.Argument("pass"),
+) -> None:
+    service = _service()
+    action_l = action.lower()
+    if action_l == "status":
+        gates = service.release_gate_status()
+        for name, ok in gates.items():
+            typer.echo(f"{name}={'pass' if ok else 'fail'}")
+        return
+    if action_l != "set":
+        raise typer.BadParameter("action must be status or set")
+    passed = value.lower() == "pass"
+    try:
+        control = service.set_release_gate(gate, passed=passed)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"{control.key}={control.value}")
+
+
 @app.command("status")
 def status(campaign_id: str | None = None) -> None:
     service = _service()

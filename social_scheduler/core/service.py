@@ -44,6 +44,11 @@ from social_scheduler.core.timing_engine import Recommendation, recommend_post_t
 
 
 class SocialSchedulerService:
+    RELEASE_GATES = (
+        "release_gate_unit_tests",
+        "release_gate_integration_tests",
+        "release_gate_dry_run_replay",
+    )
     def __init__(self) -> None:
         self.campaigns = JsonlStore(CAMPAIGNS_FILE)
         self.posts = JsonlStore(POSTS_FILE)
@@ -378,10 +383,25 @@ class SocialSchedulerService:
     def get_rollout_stage(self) -> str:
         return self.get_control("rollout_stage") or "all_live"
 
+    def release_gate_status(self) -> dict[str, bool]:
+        return {key: self.get_control(key) == "pass" for key in self.RELEASE_GATES}
+
+    def set_release_gate(self, gate: str, passed: bool) -> SystemControl:
+        if gate not in self.RELEASE_GATES:
+            raise ValueError(f"Invalid release gate: {gate}")
+        return self.set_control(gate, "pass" if passed else "fail")
+
     def set_rollout_stage(self, stage: str) -> SystemControl:
         allowed = {"dry_run_only", "linkedin_live", "all_live"}
         if stage not in allowed:
             raise ValueError(f"Invalid rollout stage: {stage}. Allowed: {', '.join(sorted(allowed))}")
+        if stage in {"linkedin_live", "all_live"}:
+            gates = self.release_gate_status()
+            missing = [name for name, ok in gates.items() if not ok]
+            if missing:
+                raise ValueError(
+                    "Cannot advance rollout stage; release gates not passed: " + ", ".join(missing)
+                )
         return self.set_control("rollout_stage", stage)
 
     def health_check(self) -> HealthCheckStatus:
