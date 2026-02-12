@@ -199,3 +199,29 @@ def test_refresh_expired_confirmation_token_creates_new_token():
     assert refreshed.id != token.id
     assert refreshed.action == token.action
     assert refreshed.target_id == token.target_id
+
+
+def test_cancel_scheduled_post_requires_confirm_and_cancels():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    _seed_post(service, post_id="p_cancel")
+
+    row = service.posts.find_one("id", "p_cancel")
+    assert row is not None
+    row["state"] = PostState.SCHEDULED.value
+    row["scheduled_for_utc"] = (datetime.now(tz=ZoneInfo("UTC")) + timedelta(minutes=10)).isoformat()
+    service.posts.upsert("id", "p_cancel", row)
+
+    control = TelegramControl(service, allowed_user_id="123")
+    request = control.handle_command("123", "/cancel p_cancel")
+    assert request.ok
+    token = request.message.split()[-1]
+
+    confirmed = control.handle_command("123", f"/confirm {token}")
+    assert confirmed.ok
+    assert "Canceled post p_cancel" in confirmed.message
+
+    post_row = service.posts.find_one("id", "p_cancel")
+    assert post_row is not None
+    assert post_row["state"] == PostState.CANCELED.value

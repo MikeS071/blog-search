@@ -135,6 +135,15 @@ class TelegramControl:
             self._audit(user_id, "manual_override_request", token.id)
             return TelegramResult(True, f"Confirm override with /confirm {token.id}")
 
+        if cmd == "/cancel" and len(parts) >= 2:
+            post_id = parts[1]
+            token = self.create_confirmation_token(
+                action="cancel_scheduled_post",
+                target_id=post_id,
+            )
+            self._audit(user_id, "cancel_post_request", token.id)
+            return TelegramResult(True, f"Confirm cancellation with /confirm {token.id}")
+
         return TelegramResult(False, "Unknown command")
 
     def expire_decision_requests(self) -> int:
@@ -267,6 +276,10 @@ class TelegramControl:
             )
             self._audit(user_id, "manual_override_confirmed", token.id)
             return TelegramResult(True, f"Manual override queued for post {post.id}")
+        if token.action == "cancel_scheduled_post":
+            post = self.service.cancel_scheduled_post(token.target_id)
+            self._audit(user_id, "cancel_post_confirmed", token.id)
+            return TelegramResult(True, f"Canceled post {post.id}")
 
         self._audit(user_id, f"token_consumed_{token.action}", token.id)
         return TelegramResult(True, f"Token consumed for action {token.action}")

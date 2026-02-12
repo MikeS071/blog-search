@@ -124,6 +124,7 @@ class TelegramRuntime:
         app.add_handler(CommandHandler("approve", self.on_text))
         app.add_handler(CommandHandler("reject", self.on_text))
         app.add_handler(CommandHandler("override", self.on_text))
+        app.add_handler(CommandHandler("cancel", self.on_text))
         return app
 
     def run_polling(self) -> None:
