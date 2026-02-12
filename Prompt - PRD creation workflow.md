@@ -246,7 +246,7 @@ Never leave decisions only in chat; persist them in files.
 
 At minimum:
 
-1. `PRD - <feature name>>.md`
+1. `PRD - <feature name>.md`
 2. `Implementation Plan - <feature name>.md`
 3. `Pre-Implementation Checklist - <feature name>.md`
 
