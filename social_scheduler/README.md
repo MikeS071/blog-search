@@ -63,6 +63,7 @@ scripts/social-scheduler/run-telegram-webhook.sh 127.0.0.1 8080 /telegram https:
 
 # Edit generated draft before approval
 ./.venv/bin/python -m social_scheduler.main post-edit <post_id> --content-file edited.md
+./.venv/bin/python -m social_scheduler.main post-retry <failed_post_id>
 
 # Analyze timing and approve campaign
 ./.venv/bin/python -m social_scheduler.main campaign-analyze-time <campaign_id>

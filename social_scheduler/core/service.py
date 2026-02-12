@@ -560,6 +560,26 @@ class SocialSchedulerService:
         self._log_event("post_canceled", campaign_id=post.campaign_id, post_id=post.id)
         return post
 
+    def retry_failed_post(self, post_id: str) -> SocialPost:
+        row = self.posts.find_one("id", post_id)
+        if not row:
+            raise ValueError(f"Post not found: {post_id}")
+        post = SocialPost.model_validate(row)
+        if post.state != PostState.FAILED:
+            raise ValueError(f"Can only retry failed posts, got state={post.state.value}")
+        ensure_transition(post.state, PostState.SCHEDULED)
+        post.state = PostState.SCHEDULED
+        post.scheduled_for_utc = datetime.now(tz=ZoneInfo("UTC")).isoformat()
+        post.updated_at = utc_now_iso()
+        self.posts.upsert("id", post.id, post.model_dump())
+        self._log_event(
+            "post_retry_requested",
+            campaign_id=post.campaign_id,
+            post_id=post.id,
+            details={"scheduled_for_utc": post.scheduled_for_utc},
+        )
+        return post
+
     def manual_override_publish(
         self,
         post_id: str,

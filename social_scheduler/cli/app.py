@@ -115,6 +115,13 @@ def post_cancel(post_id: str) -> None:
     typer.echo(f"Canceled {post.id}; state={post.state.value}")
 
 
+@app.command("post-retry")
+def post_retry(post_id: str) -> None:
+    service = _service()
+    post = service.retry_failed_post(post_id)
+    typer.echo(f"Retry queued {post.id}; state={post.state.value}; scheduled={post.scheduled_for_utc}")
+
+
 @app.command("worker-run")
 def worker_run(
     once: bool = typer.Option(True, help="Run once if true, otherwise run forever"),

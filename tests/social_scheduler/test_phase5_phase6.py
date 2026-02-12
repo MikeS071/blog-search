@@ -49,6 +49,24 @@ def test_transient_failure_reschedules_with_retry_delay():
     assert updated.scheduled_for_utc is not None
 
 
+def test_retry_failed_post_queues_immediate_retry():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    post = _seed_scheduled_post(service, "p_retry_manual")
+
+    failed = service.mark_post_result(post, success=False, error_message="boom", transient=False)
+    assert failed.state == PostState.FAILED
+
+    retried = service.retry_failed_post(post.id)
+    assert retried.state == PostState.SCHEDULED
+    assert retried.scheduled_for_utc is not None
+    assert any(
+        e["event_type"] == "post_retry_requested" and e["post_id"] == post.id
+        for e in service.events.read_all()
+    )
+
+
 def test_kill_switch_resume_marks_overdue_pending_manual():
     ensure_directories()
     service = SocialSchedulerService()
