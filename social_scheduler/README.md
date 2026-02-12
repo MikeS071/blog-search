@@ -16,6 +16,8 @@ cp .env.social-scheduler.example .env.social-scheduler
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ALLOWED_USER_ID`
 - platform app credentials
+- `LINKEDIN_PUBLISH_URL`, `LINKEDIN_VERIFY_URL`
+- `X_PUBLISH_URL`, `X_VERIFY_URL`
 
 3. Initialize runtime data:
 
