@@ -36,6 +36,7 @@ from social_scheduler.core.paths import (
     TELEGRAM_RATE_LIMIT_FILE,
     TOKENS_FILE,
 )
+from social_scheduler.core.preflight import validate_post
 from social_scheduler.core.state_machine import ensure_transition
 from social_scheduler.core.storage_jsonl import JsonlStore
 from social_scheduler.core.timing_engine import Recommendation, recommend_post_time
@@ -165,6 +166,9 @@ class SocialSchedulerService:
         rules = [ApprovalRule.model_validate(r) for r in self.rules.read_all()]
 
         for post in posts:
+            preflight = validate_post(post, stage="pre_approval")
+            if not preflight.ok:
+                raise ValueError(f"Preflight failed for {post.id}: {'; '.join(preflight.errors)}")
             if not post.edited_at:
                 raise ValueError(f"Post {post.id} requires human edit before approval")
             if post.state not in (PostState.READY_FOR_APPROVAL, PostState.PENDING_MANUAL, PostState.DRAFT):
@@ -248,6 +252,10 @@ class SocialSchedulerService:
         self.campaigns.upsert("id", campaign.id, campaign.model_dump())
 
         posts = self.list_campaign_posts(campaign_id)
+        for post in posts:
+            preflight = validate_post(post, stage="pre_schedule")
+            if not preflight.ok:
+                raise ValueError(f"Preflight failed for {post.id}: {'; '.join(preflight.errors)}")
         for post in posts:
             ensure_transition(post.state, PostState.SCHEDULED)
             post.state = PostState.SCHEDULED

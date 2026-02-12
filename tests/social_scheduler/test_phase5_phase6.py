@@ -188,3 +188,36 @@ def test_worker_sends_decision_card_and_marks_reminder():
     assert len(audits) == 1
     assert audits[0]["action"] == "decision_card_sent"
     assert audits[0]["telegram_message_id"] == "789"
+
+
+def test_worker_live_preflight_failure_marks_post_failed():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    post = _seed_scheduled_post(service, "p_preflight")
+
+    row = service.posts.find_one("id", post.id)
+    assert row is not None
+    row["content"] = "Bad\n{{placeholder}}"
+    row["approved_content_hash"] = None
+    service.posts.upsert("id", post.id, row)
+
+    # Ensure health gate can pass for live path.
+    from pathlib import Path
+
+    token_file = Path(".social_scheduler/secrets/tokens.enc")
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.write_text("encrypted-placeholder", encoding="utf-8")
+    try:
+        health = service.health_check()
+        assert health.overall_status == "pass"
+        runner = WorkerRunner(service)
+        processed = runner.run_once(dry_run=False)
+        assert processed == 0
+
+        updated = service.posts.find_one("id", post.id)
+        assert updated is not None
+        assert updated["state"] == PostState.FAILED.value
+        assert "Preflight failed:" in (updated.get("last_error") or "")
+    finally:
+        token_file.unlink(missing_ok=True)

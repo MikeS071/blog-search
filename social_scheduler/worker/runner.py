@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from social_scheduler.core.models import PostState
+from social_scheduler.core.preflight import validate_post
 from social_scheduler.core.service import SocialSchedulerService
 from social_scheduler.core.telegram_control import TelegramControl
 from social_scheduler.core.token_vault import TokenVault
@@ -57,6 +58,20 @@ class WorkerRunner:
             try:
                 if post.state != PostState.SCHEDULED:
                     continue
+                if not dry_run:
+                    preflight = validate_post(post, stage="pre_publish")
+                    if not preflight.ok:
+                        self.service.mark_post_result(
+                            post,
+                            success=False,
+                            error_message=f"Preflight failed: {'; '.join(preflight.errors)}",
+                            transient=False,
+                        )
+                        self._safe_notify(
+                            f"Preflight blocked publish for {post.platform} ({post.id}).",
+                            critical=True,
+                        )
+                        continue
                 if post.platform == "linkedin":
                     external_id = self.linkedin.publish_article(post.content, dry_run=dry_run)
                 elif post.platform == "x":
