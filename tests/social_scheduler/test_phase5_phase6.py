@@ -67,6 +67,31 @@ def test_retry_failed_post_queues_immediate_retry():
     )
 
 
+def test_mark_post_result_redacts_secret_values():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    post = _seed_scheduled_post(service, "p_redact")
+
+    failed = service.mark_post_result(
+        post,
+        success=False,
+        error_message="Authorization: Bearer supersecret token=abc123",
+        transient=False,
+    )
+    assert failed.state == PostState.FAILED
+    assert failed.last_error is not None
+    assert "supersecret" not in failed.last_error
+    assert "abc123" not in failed.last_error
+    assert "[REDACTED]" in failed.last_error
+
+    attempts = service.attempts.filter(lambda r: r.get("social_post_id") == post.id)
+    assert len(attempts) == 1
+    msg = attempts[0].get("error_message_redacted", "")
+    assert "supersecret" not in msg
+    assert "abc123" not in msg
+
+
 def test_kill_switch_resume_marks_overdue_pending_manual():
     ensure_directories()
     service = SocialSchedulerService()

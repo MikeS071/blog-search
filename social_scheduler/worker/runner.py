@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from social_scheduler.core.models import PostState
 from social_scheduler.core.hashing import content_hash, idempotency_key
 from social_scheduler.core.preflight import validate_post
+from social_scheduler.core.redaction import redact_secrets
 from social_scheduler.core.service import SocialSchedulerService
 from social_scheduler.core.telegram_control import TelegramControl
 from social_scheduler.core.token_vault import TokenVault
@@ -108,6 +109,7 @@ class WorkerRunner:
                 processed += 1
             except Exception as exc:  # noqa: BLE001
                 message = str(exc)
+                safe_message = redact_secrets(message) or "unknown error"
                 if self._is_ambiguous_error(message):
                     verified_external_id = self._verify_ambiguous_publish(post)
                     if verified_external_id:
@@ -122,11 +124,11 @@ class WorkerRunner:
                 self.service.mark_post_result(
                     post,
                     success=False,
-                    error_message=message,
+                    error_message=safe_message,
                     transient=transient,
                 )
                 self._safe_notify(
-                    f"Post failed for {post.platform} ({post.id}): {exc}", critical=True
+                    f"Post failed for {post.platform} ({post.id}): {safe_message}", critical=True
                 )
 
         return processed

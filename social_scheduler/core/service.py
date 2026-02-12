@@ -38,6 +38,7 @@ from social_scheduler.core.paths import (
     TOKENS_FILE,
 )
 from social_scheduler.core.preflight import validate_post
+from social_scheduler.core.redaction import redact_secrets
 from social_scheduler.core.state_machine import ensure_transition
 from social_scheduler.core.storage_jsonl import JsonlStore
 from social_scheduler.core.timing_engine import Recommendation, recommend_post_time
@@ -508,6 +509,7 @@ class SocialSchedulerService:
         error_message: str | None = None,
         transient: bool = True,
     ) -> SocialPost:
+        redacted_error = redact_secrets(error_message)
         attempt_number = self._next_attempt_number(post.id)
         if success:
             ensure_transition(post.state, PostState.POSTED)
@@ -518,7 +520,7 @@ class SocialSchedulerService:
         else:
             ensure_transition(post.state, PostState.FAILED)
             post.state = PostState.FAILED
-            post.last_error = error_message
+            post.last_error = redacted_error
         post.updated_at = utc_now_iso()
         self.posts.upsert("id", post.id, post.model_dump())
         self._log_event(
@@ -544,7 +546,7 @@ class SocialSchedulerService:
                 if success
                 else (AttemptResult.TRANSIENT_FAILURE if transient else AttemptResult.PERMANENT_FAILURE)
             ),
-            error_message_redacted=error_message,
+            error_message_redacted=redacted_error,
         )
         self.attempts.append(attempt.model_dump())
 
