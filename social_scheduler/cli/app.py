@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 from pathlib import Path
 
 import typer
@@ -112,6 +113,16 @@ def worker_run(
     runner.run_forever(interval_seconds=60, dry_run=dry_run)
 
 
+@app.command("worker-daemon")
+def worker_daemon(
+    interval_seconds: int = typer.Option(60, min=10, help="Polling interval in seconds"),
+    dry_run: bool = typer.Option(True, help="Use dry-run publishing mode"),
+) -> None:
+    service = _service()
+    runner = WorkerRunner(service)
+    runner.run_forever(interval_seconds=interval_seconds, dry_run=dry_run)
+
+
 @app.command("health")
 def health() -> None:
     service = _service()
@@ -218,6 +229,24 @@ def token_delete(name: str) -> None:
 def telegram_run() -> None:
     runtime = TelegramRuntime()
     runtime.run_polling()
+
+
+@app.command("telegram-webhook")
+def telegram_webhook(
+    listen: str = typer.Option("127.0.0.1"),
+    port: int = typer.Option(8080),
+    url_path: str = typer.Option("/telegram"),
+    webhook_url: str = typer.Option("", help="Public HTTPS URL base, e.g. https://example.com"),
+) -> None:
+    runtime = TelegramRuntime()
+    asyncio.run(
+        runtime.run_webhook(
+            listen=listen,
+            port=port,
+            url_path=url_path,
+            webhook_url=(webhook_url or None),
+        )
+    )
 
 
 @app.command("telegram-cmd")

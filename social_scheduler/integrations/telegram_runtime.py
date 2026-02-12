@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -76,7 +77,7 @@ class TelegramRuntime:
         async with app:
             await app.bot.send_message(chat_id=chat_id, text=message, reply_markup=keyboard)
 
-    def run_polling(self) -> None:
+    def build_application(self) -> Application:
         if not self.token:
             raise RuntimeError("Missing TELEGRAM_BOT_TOKEN")
         app = Application.builder().token(self.token).build()
@@ -92,7 +93,39 @@ class TelegramRuntime:
         app.add_handler(CommandHandler("approve", self.on_text))
         app.add_handler(CommandHandler("reject", self.on_text))
         app.add_handler(CommandHandler("override", self.on_text))
+        return app
+
+    def run_polling(self) -> None:
+        app = self.build_application()
         app.run_polling(close_loop=False)
+
+    async def run_webhook(
+        self,
+        listen: str = "127.0.0.1",
+        port: int = 8080,
+        url_path: str = "/telegram",
+        webhook_url: str | None = None,
+    ) -> None:
+        if not self.token:
+            raise RuntimeError("Missing TELEGRAM_BOT_TOKEN")
+        app = self.build_application()
+        async with app:
+            await app.initialize()
+            if webhook_url:
+                await app.bot.set_webhook(url=f"{webhook_url.rstrip('/')}{url_path}")
+            await app.start()
+            await app.updater.start_webhook(
+                listen=listen,
+                port=port,
+                url_path=url_path.lstrip("/"),
+                webhook_url=(f"{webhook_url.rstrip('/')}{url_path}" if webhook_url else None),
+            )
+            try:
+                while True:
+                    await asyncio.sleep(1)
+            finally:
+                await app.updater.stop()
+                await app.stop()
 
     def _authorized(self, update: Update) -> bool:
         if not self.allowed_user_id:
