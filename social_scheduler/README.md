@@ -93,3 +93,4 @@ scripts/social-scheduler/run-telegram-webhook.sh 127.0.0.1 8080 /telegram https:
 - Telegram control commands include `/health`, `/kill_on`, `/kill_off`, `/override <post_id>`, and `/cancel <post_id>`.
 - Critical actions use confirmation tokens and support one-tap inline `Confirm` in Telegram.
 - Structured lifecycle events are stored in `.social_scheduler/logs/events.jsonl`.
+- If Telegram decision delivery fails, worker enters fail-safe pause by turning kill switch ON.

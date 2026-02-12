@@ -352,3 +352,34 @@ def test_worker_missed_schedule_within_2h_publishes_immediately():
     row = service.posts.find_one("id", post.id)
     assert row is not None
     assert row["state"] == PostState.POSTED.value
+
+
+def test_worker_pauses_when_telegram_unavailable_at_decision_time():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    service.telegram_decisions.append(
+        {
+            "id": "tgr_outage",
+            "request_type": "approval",
+            "message": "Approve campaign outage",
+            "status": "open",
+            "created_at": utc_now_iso(),
+            "expires_at": (datetime.now(tz=ZoneInfo("UTC")) + timedelta(minutes=20)).isoformat(),
+        }
+    )
+    runner = WorkerRunner(service)
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("telegram down")
+
+    runner.telegram.send_decision_card = _boom  # type: ignore[assignment]
+    runner.telegram.send_message = _boom  # type: ignore[assignment]
+    runner.run_once(dry_run=True)
+
+    assert service.is_kill_switch_on()
+    assert any(
+        e["event_type"] == "telegram_decision_outage_paused"
+        and e["details"].get("request_id") == "tgr_outage"
+        for e in service.events.read_all()
+    )

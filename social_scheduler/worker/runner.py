@@ -38,9 +38,13 @@ class WorkerRunner:
         for req in refreshed:
             if self._safe_decision_reminder(req.id, req.message):
                 self.telegram_control.mark_reminded(req.id)
+            else:
+                self._pause_for_telegram_decision_outage(req.id)
         for req in self.telegram_control.reminder_candidates():
             if self._safe_decision_reminder(req.id, req.message):
                 self.telegram_control.mark_reminded(req.id)
+            else:
+                self._pause_for_telegram_decision_outage(req.id)
         self._maybe_send_scheduled_reports()
 
         if is_publish_paused(self.service):
@@ -222,3 +226,11 @@ class WorkerRunner:
                 return True
             except Exception:  # noqa: BLE001
                 return False
+
+    def _pause_for_telegram_decision_outage(self, request_id: str) -> None:
+        if not self.service.is_kill_switch_on():
+            self.service.set_kill_switch(True)
+            self.service._log_event(  # noqa: SLF001
+                "telegram_decision_outage_paused",
+                details={"request_id": request_id},
+            )
