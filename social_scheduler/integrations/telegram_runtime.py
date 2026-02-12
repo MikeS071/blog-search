@@ -87,6 +87,16 @@ class TelegramRuntime:
         if data.startswith("confirm:"):
             tok_id = data.split(":", 1)[1]
             result = self.control.handle_command(user_id, f"/confirm {tok_id}")
+            if not result.ok:
+                refreshed = self.control.refresh_expired_confirmation_token(tok_id)
+                if refreshed:
+                    await query.edit_message_text("Confirmation expired. Sent a fresh confirm action.")
+                    if query.message:
+                        await query.message.reply_text(
+                            f"Confirm with /confirm {refreshed.id}",
+                            reply_markup=self._confirm_keyboard(refreshed.id),
+                        )
+                    return
             await query.edit_message_text(result.message)
             return
 
@@ -168,4 +178,10 @@ class TelegramRuntime:
                     InlineKeyboardButton("Reject", callback_data=f"reject:{request_id}"),
                 ]
             ]
+        )
+
+    @staticmethod
+    def _confirm_keyboard(token_id: str) -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Confirm", callback_data=f"confirm:{token_id}")]]
         )

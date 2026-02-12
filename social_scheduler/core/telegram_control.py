@@ -60,6 +60,24 @@ class TelegramControl:
         self.service.confirm_tokens.append(token.model_dump())
         return token
 
+    def refresh_expired_confirmation_token(
+        self, token_id: str, ttl_minutes: int = 30
+    ) -> ConfirmationToken | None:
+        row = self.service.confirm_tokens.find_one("id", token_id)
+        if not row:
+            return None
+        token = ConfirmationToken.model_validate(row)
+        now = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+        if token.used_at is not None:
+            return None
+        if datetime.fromisoformat(token.expires_at) > now:
+            return None
+        return self.create_confirmation_token(
+            action=token.action,
+            target_id=token.target_id,
+            ttl_minutes=ttl_minutes,
+        )
+
     def handle_command(self, telegram_user_id: str, text: str) -> TelegramResult:
         user_id = str(telegram_user_id)
         if user_id != self.allowed_user_id:

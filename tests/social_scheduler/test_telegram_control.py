@@ -180,3 +180,22 @@ def test_refresh_expired_request_creates_new_open_request():
     refreshed_row = service.telegram_decisions.find_one("id", refreshed.id)
     assert refreshed_row is not None
     assert refreshed_row["status"] == "open"
+
+
+def test_refresh_expired_confirmation_token_creates_new_token():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    control = TelegramControl(service, allowed_user_id="123")
+
+    token = control.create_confirmation_token("kill_switch_on", "global", ttl_minutes=30)
+    row = service.confirm_tokens.find_one("id", token.id)
+    assert row is not None
+    row["expires_at"] = (datetime.now(tz=ZoneInfo("UTC")) - timedelta(minutes=1)).isoformat()
+    service.confirm_tokens.upsert("id", token.id, row)
+
+    refreshed = control.refresh_expired_confirmation_token(token.id, ttl_minutes=30)
+    assert refreshed is not None
+    assert refreshed.id != token.id
+    assert refreshed.action == token.action
+    assert refreshed.target_id == token.target_id
