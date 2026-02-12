@@ -7,7 +7,7 @@ _ALLOWED_TRANSITIONS: dict[PostState, set[PostState]] = {
     PostState.READY_FOR_APPROVAL: {PostState.PENDING_MANUAL, PostState.APPROVED, PostState.CANCELED},
     PostState.PENDING_MANUAL: {PostState.APPROVED, PostState.CANCELED},
     PostState.APPROVED: {PostState.SCHEDULED, PostState.CANCELED},
-    PostState.SCHEDULED: {PostState.POSTED, PostState.FAILED, PostState.CANCELED},
+    PostState.SCHEDULED: {PostState.POSTED, PostState.FAILED, PostState.CANCELED, PostState.PENDING_MANUAL},
     PostState.FAILED: {PostState.SCHEDULED, PostState.CANCELED},
     PostState.POSTED: set(),
     PostState.CANCELED: set(),

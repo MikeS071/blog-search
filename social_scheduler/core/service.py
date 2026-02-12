@@ -238,11 +238,22 @@ class SocialSchedulerService:
             updated_at=utc_now_iso(),
         )
         self.controls.upsert("key", control.key, control.model_dump())
+        if not enabled:
+            self._mark_overdue_for_reconfirmation()
         return control
 
     def is_kill_switch_on(self) -> bool:
         row = self.controls.find_one("key", "global_publish_paused")
         return bool(row and row.get("value") == "true")
+
+    def get_control(self, key: str) -> str | None:
+        row = self.controls.find_one("key", key)
+        return None if row is None else row.get("value")
+
+    def set_control(self, key: str, value: str) -> SystemControl:
+        control = SystemControl(key=key, value=value, updated_at=utc_now_iso())
+        self.controls.upsert("key", key, control.model_dump())
+        return control
 
     def health_check(self) -> HealthCheckStatus:
         token_ok = bool(Path(".social_scheduler/secrets/tokens.enc").exists())
@@ -280,7 +291,9 @@ class SocialSchedulerService:
         success: bool,
         external_post_id: str | None = None,
         error_message: str | None = None,
+        transient: bool = True,
     ) -> SocialPost:
+        attempt_number = self._next_attempt_number(post.id)
         if success:
             ensure_transition(post.state, PostState.POSTED)
             post.state = PostState.POSTED
@@ -297,14 +310,74 @@ class SocialSchedulerService:
         attempt = SocialPostAttempt(
             id=self._new_id("attempt"),
             social_post_id=post.id,
-            attempt_number=self._next_attempt_number(post.id),
+            attempt_number=attempt_number,
             started_at=utc_now_iso(),
             finished_at=utc_now_iso(),
-            result=AttemptResult.SUCCESS if success else AttemptResult.TRANSIENT_FAILURE,
+            result=(
+                AttemptResult.SUCCESS
+                if success
+                else (AttemptResult.TRANSIENT_FAILURE if transient else AttemptResult.PERMANENT_FAILURE)
+            ),
             error_message_redacted=error_message,
         )
         self.attempts.append(attempt.model_dump())
+
+        if not success and transient:
+            from social_scheduler.worker.retry_policy import retry_delay
+
+            delay = retry_delay(attempt_number)
+            if delay is not None:
+                ensure_transition(post.state, PostState.SCHEDULED)
+                post.state = PostState.SCHEDULED
+                post.scheduled_for_utc = (datetime.now(tz=ZoneInfo("UTC")) + delay).isoformat()
+                post.updated_at = utc_now_iso()
+                self.posts.upsert("id", post.id, post.model_dump())
         return post
+
+    def cancel_scheduled_post(self, post_id: str) -> SocialPost:
+        row = self.posts.find_one("id", post_id)
+        if not row:
+            raise ValueError(f"Post not found: {post_id}")
+        post = SocialPost.model_validate(row)
+        if post.state not in {PostState.SCHEDULED, PostState.PENDING_MANUAL, PostState.FAILED}:
+            raise ValueError(f"Cannot cancel post in state {post.state.value}")
+        ensure_transition(post.state, PostState.CANCELED)
+        post.state = PostState.CANCELED
+        post.updated_at = utc_now_iso()
+        self.posts.upsert("id", post.id, post.model_dump())
+        return post
+
+    def _mark_overdue_for_reconfirmation(self) -> None:
+        now = datetime.now(tz=ZoneInfo("UTC"))
+        for row in self.posts.read_all():
+            if row.get("state") != PostState.SCHEDULED.value:
+                continue
+            scheduled = row.get("scheduled_for_utc")
+            if not scheduled:
+                continue
+            scheduled_dt = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
+            if scheduled_dt > now:
+                continue
+
+            post = SocialPost.model_validate(row)
+            ensure_transition(post.state, PostState.PENDING_MANUAL)
+            post.state = PostState.PENDING_MANUAL
+            post.updated_at = utc_now_iso()
+            self.posts.upsert("id", post.id, post.model_dump())
+
+            req = TelegramDecisionRequest(
+                id=self._new_id("tgr"),
+                campaign_id=post.campaign_id,
+                social_post_id=post.id,
+                request_type="confirmation",
+                message=(
+                    f"Post {post.id} became overdue while paused. "
+                    "Reconfirm schedule before publish resume."
+                ),
+                created_at=utc_now_iso(),
+                expires_at=(now + timedelta(minutes=30)).isoformat(),
+            )
+            self.telegram_decisions.append(req.model_dump())
 
     def _next_attempt_number(self, post_id: str) -> int:
         attempts = self.attempts.filter(lambda r: r.get("social_post_id") == post_id)

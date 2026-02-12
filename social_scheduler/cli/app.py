@@ -89,6 +89,13 @@ def campaign_schedule(campaign_id: str, scheduled_utc: str) -> None:
     typer.echo(f"Scheduled {len(posts)} posts at {scheduled_utc}")
 
 
+@app.command("post-cancel")
+def post_cancel(post_id: str) -> None:
+    service = _service()
+    post = service.cancel_scheduled_post(post_id)
+    typer.echo(f"Canceled {post.id}; state={post.state.value}")
+
+
 @app.command("worker-run")
 def worker_run(
     once: bool = typer.Option(True, help="Run once if true, otherwise run forever"),
