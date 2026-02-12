@@ -393,6 +393,36 @@ def test_worker_passes_deterministic_idempotency_key_to_publish_client():
 
     expected = idempotency_key(post.campaign_id, post.platform, post.approved_content_hash or "")
     assert captured.get("key") == expected
+    exchanges = [
+        e for e in service.events.read_all()
+        if e.get("event_type") == "publish_exchange" and e.get("post_id") == post.id
+    ]
+    assert any(e["details"].get("phase") == "request" for e in exchanges)
+    assert any(e["details"].get("phase") == "response" for e in exchanges)
+
+
+def test_worker_logs_redacted_publish_exchange_error():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    post = _seed_scheduled_post(service, "p_exchange_redact")
+    runner = WorkerRunner(service)
+    runner.x.publish_article = lambda *_args, **_kwargs: (_ for _ in ()).throw(  # type: ignore[assignment]
+        RuntimeError("Authorization: Bearer supersecret")
+    )
+
+    count = runner.run_once(dry_run=True)
+    assert count == 0
+    exchanges = [
+        e for e in service.events.read_all()
+        if e.get("event_type") == "publish_exchange" and e.get("post_id") == post.id
+    ]
+    assert any(e["details"].get("phase") == "response" for e in exchanges)
+    error_entries = [e for e in exchanges if e["details"].get("success") is False]
+    assert len(error_entries) >= 1
+    msg = error_entries[-1]["details"].get("error_message_redacted", "")
+    assert "supersecret" not in msg
+    assert "[REDACTED]" in msg
 
 
 def test_worker_missed_schedule_over_2h_requires_reconfirmation():

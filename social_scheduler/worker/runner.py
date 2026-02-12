@@ -87,29 +87,55 @@ class WorkerRunner:
                         )
                         self._safe_notify(
                             f"Preflight blocked publish for {post.platform} ({post.id}).",
-                            critical=True,
-                        )
-                        continue
+                        critical=True,
+                    )
+                    continue
+                idem_key = self._publish_idempotency_key(post)
+                self.service.log_publish_exchange(
+                    campaign_id=post.campaign_id,
+                    post_id=post.id,
+                    platform=post.platform,
+                    idempotency_key=idem_key,
+                    phase="request",
+                    details={"dry_run": dry_run},
+                )
                 if post.platform == "linkedin":
                     external_id = self.linkedin.publish_article(
                         post.content,
                         dry_run=dry_run,
-                        idempotency_key=self._publish_idempotency_key(post),
+                        idempotency_key=idem_key,
                     )
                 elif post.platform == "x":
                     external_id = self.x.publish_article(
                         post.content,
                         dry_run=dry_run,
-                        idempotency_key=self._publish_idempotency_key(post),
+                        idempotency_key=idem_key,
                     )
                 else:
                     raise RuntimeError(f"Unsupported platform: {post.platform}")
 
+                self.service.log_publish_exchange(
+                    campaign_id=post.campaign_id,
+                    post_id=post.id,
+                    platform=post.platform,
+                    idempotency_key=idem_key,
+                    phase="response",
+                    details={"success": True, "external_post_id": external_id},
+                )
                 self.service.mark_post_result(post, success=True, external_post_id=external_id)
                 processed += 1
             except Exception as exc:  # noqa: BLE001
                 message = str(exc)
                 safe_message = redact_secrets(message) or "unknown error"
+                idem_key = self._publish_idempotency_key(post)
+                self.service.log_publish_exchange(
+                    campaign_id=post.campaign_id,
+                    post_id=post.id,
+                    platform=post.platform,
+                    idempotency_key=idem_key,
+                    phase="response",
+                    details={"success": False, "error_message_redacted": safe_message},
+                )
                 if self._is_ambiguous_error(message):
                     verified_external_id = self._verify_ambiguous_publish(post)
                     if verified_external_id:

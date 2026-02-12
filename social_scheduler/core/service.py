@@ -127,6 +127,28 @@ class SocialSchedulerService:
             }
         )
 
+    def log_publish_exchange(
+        self,
+        campaign_id: str,
+        post_id: str,
+        platform: str,
+        idempotency_key: str,
+        phase: str,
+        details: dict | None = None,
+    ) -> None:
+        sanitized = details or {}
+        self._log_event(
+            "publish_exchange",
+            campaign_id=campaign_id,
+            post_id=post_id,
+            details={
+                "platform": platform,
+                "idempotency_key": idempotency_key,
+                "phase": phase,
+                **sanitized,
+            },
+        )
+
     def preflight_posts(
         self,
         stage: str,
