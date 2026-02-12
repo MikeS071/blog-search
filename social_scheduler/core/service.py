@@ -91,6 +91,24 @@ class SocialSchedulerService:
         suffix = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
         return f"{prefix}_{suffix}"
 
+    def _error_code_from_message(self, message: str | None) -> str | None:
+        if not message:
+            return None
+        lower = message.lower()
+        if "preflight failed" in lower:
+            return "preflight_failed"
+        if any(m in lower for m in ("unauthorized", "invalid token", "token missing", "authorization", "bearer")):
+            return "auth_error"
+        if "forbidden" in lower or "permission" in lower:
+            return "permission_error"
+        if "validation" in lower or "bad request" in lower:
+            return "validation_error"
+        if any(m in lower for m in ("timeout", "timed out", "gateway timeout")):
+            return "timeout"
+        if "connection reset" in lower:
+            return "connection_reset"
+        return "unknown_error"
+
     def _log_event(
         self,
         event_type: str,
@@ -543,6 +561,7 @@ class SocialSchedulerService:
     ) -> SocialPost:
         redacted_error = redact_secrets(error_message)
         attempt_number = self._next_attempt_number(post.id)
+        error_code = None if success else self._error_code_from_message(redacted_error)
         if success:
             ensure_transition(post.state, PostState.POSTED)
             post.state = PostState.POSTED
@@ -564,6 +583,7 @@ class SocialSchedulerService:
                 "state": post.state.value,
                 "external_post_id": external_post_id,
                 "transient": transient,
+                "error_code": error_code,
             },
         )
 
@@ -578,6 +598,7 @@ class SocialSchedulerService:
                 if success
                 else (AttemptResult.TRANSIENT_FAILURE if transient else AttemptResult.PERMANENT_FAILURE)
             ),
+            error_code=error_code,
             error_message_redacted=redacted_error,
         )
         self.attempts.append(attempt.model_dump())

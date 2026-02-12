@@ -90,6 +90,19 @@ def test_mark_post_result_redacts_secret_values():
     msg = attempts[0].get("error_message_redacted", "")
     assert "supersecret" not in msg
     assert "abc123" not in msg
+    assert attempts[0].get("error_code") == "auth_error"
+
+
+def test_mark_post_result_sets_timeout_error_code():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+    post = _seed_scheduled_post(service, "p_timeout_code")
+
+    service.mark_post_result(post, success=False, error_message="gateway timeout", transient=True)
+    attempts = service.attempts.filter(lambda r: r.get("social_post_id") == post.id)
+    assert len(attempts) == 1
+    assert attempts[0].get("error_code") == "timeout"
 
 
 def test_kill_switch_resume_marks_overdue_pending_manual():
