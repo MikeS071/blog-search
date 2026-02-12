@@ -32,6 +32,7 @@ class WorkerRunner:
         )
 
     def run_once(self, dry_run: bool = True) -> int:
+        self.service.set_worker_heartbeat()
         expired, refreshed = self.telegram_control.expire_and_refresh_decision_requests(refresh=True)
         if expired:
             self._safe_notify(f"{expired} Telegram decision request(s) expired.", critical=True)

@@ -109,6 +109,24 @@ def test_live_publish_requires_daily_health_gate_pass():
     assert "Daily health gate not passed" in reason
 
 
+def test_health_check_fails_without_worker_heartbeat():
+    ensure_directories()
+    service = SocialSchedulerService()
+    _reset(service)
+
+    from pathlib import Path
+
+    token_file = Path(".social_scheduler/secrets/tokens.enc")
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.write_text("encrypted-placeholder", encoding="utf-8")
+    try:
+        status = service.health_check()
+        assert status.overall_status == "fail"
+        assert status.worker_status == "down"
+    finally:
+        token_file.unlink(missing_ok=True)
+
+
 def test_health_check_sets_gate_pass_for_today():
     ensure_directories()
     service = SocialSchedulerService()
@@ -121,6 +139,7 @@ def test_health_check_sets_gate_pass_for_today():
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text("encrypted-placeholder", encoding="utf-8")
     try:
+        service.set_worker_heartbeat()
         status = service.health_check()
         assert status.overall_status == "pass"
         assert service.has_passed_health_gate_today()
@@ -211,6 +230,7 @@ def test_worker_live_preflight_failure_marks_post_failed():
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text("encrypted-placeholder", encoding="utf-8")
     try:
+        service.set_worker_heartbeat()
         health = service.health_check()
         assert health.overall_status == "pass"
         runner = WorkerRunner(service)

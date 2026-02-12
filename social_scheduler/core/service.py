@@ -371,9 +371,20 @@ class SocialSchedulerService:
         self.controls.upsert("key", key, control.model_dump())
         return control
 
+    def set_worker_heartbeat(self, now_utc: datetime | None = None) -> None:
+        now = now_utc or datetime.now(tz=ZoneInfo("UTC"))
+        self.set_control("worker_last_heartbeat_utc", now.isoformat())
+
     def health_check(self) -> HealthCheckStatus:
         token_ok = bool(TOKENS_FILE.exists() and TOKENS_FILE.stat().st_size > 0)
-        worker_ok = True
+        worker_ok = False
+        heartbeat = self.get_control("worker_last_heartbeat_utc")
+        if heartbeat:
+            try:
+                hb = datetime.fromisoformat(heartbeat.replace("Z", "+00:00"))
+                worker_ok = (datetime.now(tz=ZoneInfo("UTC")) - hb) <= timedelta(minutes=5)
+            except ValueError:
+                worker_ok = False
         kill = self.is_kill_switch_on()
         critical_failures = bool(self.posts.filter(lambda r: r.get("state") == PostState.FAILED.value))
 
